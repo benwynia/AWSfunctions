@@ -53,3 +53,51 @@ def load_s3_data_to_dataframes(bucket_name):
                 print(f"Loaded {file_name} into DataFrame named '{base_name}'.")
 
     return dataframes
+
+def sendEmail(subject, bodyText, bodyHtml, sender, recipient, attachmentPath=None, awsRegion="us-east-2", configurationSet="SarahAIConfigSet"):
+    # Create a new SES resource and specify a region.
+    client = boto3.client('ses', region_name=awsRegion)
+
+    # Create a multipart/mixed parent container.
+    msg = MIMEMultipart('mixed')
+    msg['Subject'] = subject
+    msg['From'] = sender
+    msg['To'] = recipient
+
+    # Create a multipart/alternative child container.
+    msgBody = MIMEMultipart('alternative')
+    textPart = MIMEText(bodyText.encode('utf-8'), 'plain', 'utf-8')
+    htmlPart = MIMEText(bodyHtml.encode('utf-8'), 'html', 'utf-8')
+
+    # Attach parts into message container.
+    msgBody.attach(textPart)
+    msgBody.attach(htmlPart)
+    msg.attach(msgBody)
+
+    # Attach the file
+    if attachmentPath:
+        try:
+            with open(attachmentPath, 'rb') as file:
+                att = MIMEApplication(file.read())
+                att.add_header('Content-Disposition', 'attachment', filename=os.path.basename(attachmentPath))
+                msg.attach(att)
+        except:
+            print('Failed to open file and/or attach to email')
+
+    try:
+        # Provide the contents of the email.
+        response = client.send_raw_email(
+            Source=sender,
+            Destinations=[recipient],
+            RawMessage={'Data': msg.as_string()},
+            ConfigurationSetName=configurationSet
+        )
+        return {
+            'statusCode': 200,
+            'body': "Email sent! Message ID: " + response['MessageId']
+        }
+    except ClientError as e:
+        return {
+            'statusCode': 400,
+            'body': "Failed to send email: " + e.response['Error']['Message']
+        }
